@@ -65,7 +65,30 @@
             margin-top: 1rem;
         }
         
-        .btn-send:hover {
+        .btn-send:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        .btn-send:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .btn-stop {
+            background: linear-gradient(to right, #dc3545, #c82333);
+            border: none;
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: all 0.3s;
+            width: 100%;
+            margin-top: 1rem;
+        }
+        
+        .btn-stop:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
         }
@@ -123,6 +146,63 @@
             margin-bottom: 1.5rem;
             font-size: 0.9rem;
         }
+        
+        .log-container {
+            background: #1e1e2e;
+            border-radius: 10px;
+            padding: 1rem;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+        }
+        
+        .log-entry {
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid;
+            border-radius: 5px;
+            background: #2d2d3a;
+        }
+        
+        .log-success {
+            border-left-color: #28a745;
+            color: #90ee90;
+        }
+        
+        .log-error {
+            border-left-color: #dc3545;
+            color: #ffaaaa;
+        }
+        
+        .log-info {
+            border-left-color: #17a2b8;
+            color: #add8e6;
+        }
+        
+        .log-warning {
+            border-left-color: #ffc107;
+            color: #ffe5b4;
+        }
+        
+        .timer-display {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--primary-color);
+            text-align: center;
+            padding: 0.5rem;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin: 1rem 0;
+        }
+        
+        .status-badge {
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            display: inline-block;
+        }
     </style>
 </head>
 <body>
@@ -144,6 +224,9 @@
                             <i class="bi bi-info-circle me-2"></i>
                             <strong>Important:</strong> Use Gmail App Password (not regular password) for authentication. 
                             <a href="https://support.google.com/accounts/answer/185833" target="_blank" class="ms-1">Learn how to create one</a>
+                            <br>
+                            <i class="bi bi-clock-history me-2"></i>
+                            <strong>Auto-delay:</strong> Emails will be sent one by one with 60 seconds delay to avoid spam.
                         </div>
                         
                         <!-- Email Form -->
@@ -194,27 +277,53 @@
                                 <textarea class="form-control" id="message_body" rows="6" required></textarea>
                             </div>
                             
+                            <!-- Timer and Status Display -->
+                            <div id="timerDisplay" class="timer-display" style="display: none;">
+                                <i class="bi bi-hourglass-split"></i> Next email in: <span id="countdown">60</span> seconds
+                            </div>
+                            
+                            <div id="statusDisplay" class="text-center mb-3" style="display: none;">
+                                <span class="status-badge bg-info text-dark" id="campaignStatus">Preparing...</span>
+                            </div>
+                            
                             <!-- Progress Bar -->
                             <div class="progress" style="display: none;" id="progressBar">
                                 <div class="progress-bar progress-bar-striped progress-bar-animated" 
                                      role="progressbar" style="width: 0%"></div>
                             </div>
                             
-                            <!-- Send Button -->
-                            <button type="submit" class="btn btn-send" id="sendButton">
-                                <i class="bi bi-send me-2"></i> Send Emails
-                            </button>
+                            <!-- Button Group -->
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <button type="submit" class="btn btn-send" id="sendButton">
+                                        <i class="bi bi-send me-2"></i> Start Sequential Sending (60s delay)
+                                    </button>
+                                </div>
+                                <div class="col-md-6">
+                                    <button type="button" class="btn btn-stop" id="stopButton" style="display: none;">
+                                        <i class="bi bi-stop-circle me-2"></i> Stop Campaign
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Live Logs -->
+                            <div class="mt-4">
+                                <h5><i class="bi bi-terminal"></i> Live Delivery Logs</h5>
+                                <div id="liveLogs" class="log-container">
+                                    <div class="log-entry log-info">📡 Ready to start. Configure credentials and click "Start Sequential Sending".</div>
+                                </div>
+                            </div>
                             
                             <!-- Results Section -->
                             <div id="resultsContainer" class="mt-4" style="display: none;">
-                                <h5>Results:</h5>
+                                <h5>Final Results:</h5>
                                 <div id="resultsList"></div>
                             </div>
                         </form>
                     </div>
                     
                     <div class="card-footer text-muted text-center">
-                        <small>© 2024 Super Cash International Earn Platform</small>
+                        <small>© 2024 Super Cash International Earn Platform | 60-second delay between emails for spam protection</small>
                     </div>
                 </div>
             </div>
@@ -234,6 +343,23 @@
             const resultsList = document.getElementById('resultsList');
             const alertContainer = document.getElementById('alertContainer');
             const sendButton = document.getElementById('sendButton');
+            const stopButton = document.getElementById('stopButton');
+            const timerDisplay = document.getElementById('timerDisplay');
+            const countdownSpan = document.getElementById('countdown');
+            const statusDisplay = document.getElementById('statusDisplay');
+            const campaignStatusSpan = document.getElementById('campaignStatus');
+            const liveLogs = document.getElementById('liveLogs');
+            
+            // Campaign state variables
+            let isCampaignActive = false;
+            let emailQueue = [];
+            let currentIndex = 0;
+            let sentCount = 0;
+            let failedCount = 0;
+            let totalRecipients = 0;
+            let currentTimeout = null;
+            let countdownInterval = null;
+            let campaignResults = [];
             
             // Update recipient preview
             recipientsTextarea.addEventListener('input', function() {
@@ -255,34 +381,63 @@
                 }
             });
             
-            // Form submission
-            form.addEventListener('submit', async function(e) {
-                e.preventDefault();
+            // Function to add log entry
+            function addLog(message, type = 'info') {
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry log-${type}`;
+                const timestamp = new Date().toLocaleTimeString();
+                logEntry.innerHTML = `<i class="bi bi-${type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'} me-2"></i> [${timestamp}] ${message}`;
+                liveLogs.appendChild(logEntry);
+                logEntry.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 
-                // Disable send button
-                sendButton.disabled = true;
-                sendButton.innerHTML = '<i class="bi bi-hourglass-split me-2"></i> Sending...';
+                // Limit log entries to 200
+                while (liveLogs.children.length > 200) {
+                    liveLogs.removeChild(liveLogs.firstChild);
+                }
+            }
+            
+            function clearLogs() {
+                liveLogs.innerHTML = '<div class="log-entry log-info">📡 Logs cleared. Ready to start.</div>';
+            }
+            
+            function updateProgress(percentage) {
+                const progressBarElement = document.querySelector('.progress-bar');
+                progressBarElement.style.width = `${percentage}%`;
+                progressBarElement.textContent = `${Math.round(percentage)}%`;
+            }
+            
+            function showAlert(type, message) {
+                const alertDiv = document.createElement('div');
+                alertDiv.className = `alert alert-${type} alert-custom alert-dismissible fade show`;
+                alertDiv.innerHTML = `
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                alertContainer.appendChild(alertDiv);
                 
-                // Show progress bar
-                progressBar.style.display = 'block';
-                updateProgress(0);
-                
-                // Clear previous results and alerts
-                resultsContainer.style.display = 'none';
-                resultsList.innerHTML = '';
-                clearAlerts();
-                
-                // Get form data
+                setTimeout(() => {
+                    if (alertDiv.parentNode) alertDiv.remove();
+                }, 5000);
+            }
+            
+            function clearAlerts() {
+                alertContainer.innerHTML = '';
+            }
+            
+            // Function to send a single email
+            async function sendSingleEmail(recipient, index) {
                 const formData = {
                     gmail_email: document.getElementById('gmail_email').value,
                     gmail_password: document.getElementById('gmail_password').value,
                     header_name: document.getElementById('header_name').value,
                     subject: document.getElementById('subject').value,
                     message_body: document.getElementById('message_body').value,
-                    recipients: document.getElementById('recipients').value
+                    recipients: recipient
                 };
                 
                 try {
+                    addLog(`📤 Sending (${index + 1}/${totalRecipients}) to: ${recipient}`, 'info');
+                    
                     const response = await fetch('/send-email', {
                         method: 'POST',
                         headers: {
@@ -293,12 +448,186 @@
                     
                     const result = await response.json();
                     
+                    if (result.success && result.results && result.results[0]) {
+                        const emailResult = result.results[0];
+                        if (emailResult.success) {
+                            addLog(`✅ SUCCESS: ${recipient} - Message ID: ${emailResult.messageId}`, 'success');
+                            return { success: true, recipient, messageId: emailResult.messageId };
+                        } else {
+                            addLog(`❌ FAILED: ${recipient} - Error: ${emailResult.error}`, 'error');
+                            return { success: false, recipient, error: emailResult.error };
+                        }
+                    } else {
+                        throw new Error(result.message || 'Unknown error');
+                    }
+                } catch (error) {
+                    addLog(`❌ FAILED: ${recipient} - ${error.message}`, 'error');
+                    return { success: false, recipient, error: error.message };
+                }
+            }
+            
+            // Function to process next email with 60-second delay
+            function processNextEmail() {
+                if (!isCampaignActive) return;
+                
+                if (currentIndex >= emailQueue.length) {
+                    // Campaign finished
+                    addLog('🎉 CAMPAIGN COMPLETED! All emails have been processed.', 'success');
+                    finishCampaign();
+                    return;
+                }
+                
+                const recipient = emailQueue[currentIndex];
+                const nextIndex = currentIndex;
+                
+                // Update status
+                campaignStatusSpan.textContent = `Sending ${sentCount + failedCount + 1}/${totalRecipients} - Waiting 60s`;
+                updateProgress(((sentCount + failedCount) / totalRecipients) * 100);
+                
+                // Start countdown
+                let secondsLeft = 60;
+                countdownSpan.textContent = secondsLeft;
+                timerDisplay.style.display = 'block';
+                
+                if (countdownInterval) clearInterval(countdownInterval);
+                countdownInterval = setInterval(() => {
+                    if (!isCampaignActive) {
+                        clearInterval(countdownInterval);
+                        return;
+                    }
+                    secondsLeft--;
+                    countdownSpan.textContent = secondsLeft;
+                    if (secondsLeft <= 0) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                }, 1000);
+                
+                // Set timeout to send email after 60 seconds
+                currentTimeout = setTimeout(async () => {
+                    if (!isCampaignActive) return;
+                    
+                    timerDisplay.style.display = 'none';
+                    if (countdownInterval) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                    
+                    // Send the email
+                    const result = await sendSingleEmail(recipient, nextIndex);
+                    
+                    // Store result
+                    campaignResults.push(result);
                     if (result.success) {
-                        showAlert('success', '🎉 All emails sent successfully!');
+                        sentCount++;
+                    } else {
+                        failedCount++;
+                    }
+                    
+                    // Update progress
+                    updateProgress(((sentCount + failedCount) / totalRecipients) * 100);
+                    campaignStatusSpan.textContent = `Sending ${sentCount + failedCount}/${totalRecipients}`;
+                    
+                    // Move to next email
+                    currentIndex++;
+                    
+                    // Process next email
+                    if (isCampaignActive && currentIndex < emailQueue.length) {
+                        processNextEmail();
+                    } else if (currentIndex >= emailQueue.length) {
+                        addLog('🎉 CAMPAIGN COMPLETED! All emails have been processed.', 'success');
+                        finishCampaign();
+                    }
+                }, 60000);
+            }
+            
+            function finishCampaign() {
+                isCampaignActive = false;
+                
+                if (currentTimeout) {
+                    clearTimeout(currentTimeout);
+                    currentTimeout = null;
+                }
+                if (countdownInterval) {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                }
+                
+                timerDisplay.style.display = 'none';
+                sendButton.disabled = false;
+                sendButton.style.display = 'block';
+                stopButton.style.display = 'none';
+                progressBar.style.display = 'none';
+                statusDisplay.style.display = 'none';
+                
+                // Display final results
+                if (campaignResults.length > 0) {
+                    resultsContainer.style.display = 'block';
+                    resultsList.innerHTML = '';
+                    
+                    campaignResults.forEach((item, index) => {
+                        const resultItem = document.createElement('div');
+                        resultItem.className = `alert ${item.success ? 'alert-success' : 'alert-danger'} alert-custom`;
                         
-                        // Display results
+                        const icon = item.success ? 
+                            '<i class="bi bi-check-circle-fill status-icon"></i>' : 
+                            '<i class="bi bi-x-circle-fill status-icon"></i>';
+                        
+                        const status = item.success ? 
+                            `<span class="badge bg-success">Success</span>` : 
+                            `<span class="badge bg-danger">Failed</span>`;
+                        
+                        const message = item.success ? 
+                            `Message ID: ${item.messageId}` : 
+                            `Error: ${item.error}`;
+                        
+                        resultItem.innerHTML = `
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    ${icon}
+                                    <strong>${item.recipient}</strong>
+                                </div>
+                                ${status}
+                            </div>
+                            <div class="mt-2">${message}</div>
+                        `;
+                        
+                        resultsList.appendChild(resultItem);
+                    });
+                    
+                    showAlert('success', `Campaign completed! ${sentCount} sent successfully, ${failedCount} failed.`);
+                }
+                
+                addLog(`📊 Campaign Summary: ${sentCount} successful, ${failedCount} failed out of ${totalRecipients} total.`, 'info');
+            }
+            
+            function stopCampaign() {
+                if (isCampaignActive) {
+                    isCampaignActive = false;
+                    
+                    if (currentTimeout) {
+                        clearTimeout(currentTimeout);
+                        currentTimeout = null;
+                    }
+                    if (countdownInterval) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                    
+                    timerDisplay.style.display = 'none';
+                    sendButton.disabled = false;
+                    sendButton.style.display = 'block';
+                    stopButton.style.display = 'none';
+                    progressBar.style.display = 'none';
+                    statusDisplay.style.display = 'none';
+                    
+                    addLog('⛔ Campaign stopped by user.', 'warning');
+                    showAlert('warning', 'Campaign stopped by user.');
+                    
+                    if (campaignResults.length > 0) {
                         resultsContainer.style.display = 'block';
-                        result.results.forEach((item, index) => {
+                        resultsList.innerHTML = '';
+                        campaignResults.forEach((item, index) => {
                             const resultItem = document.createElement('div');
                             resultItem.className = `alert ${item.success ? 'alert-success' : 'alert-danger'} alert-custom`;
                             
@@ -326,65 +655,72 @@
                             `;
                             
                             resultsList.appendChild(resultItem);
-                            
-                            // Update progress bar
-                            updateProgress(((index + 1) / result.results.length) * 100);
                         });
-                    } else {
-                        showAlert('danger', `❌ Error: ${result.message || 'Failed to send emails'}`);
                     }
-                } catch (error) {
-                    console.error('Error:', error);
-                    showAlert('danger', `❌ Connection error: ${error.message}`);
-                } finally {
-                    // Reset button and progress bar
-                    sendButton.disabled = false;
-                    sendButton.innerHTML = '<i class="bi bi-send me-2"></i> Send Emails';
-                    progressBar.style.display = 'none';
                 }
-            });
-            
-            // Helper functions
-            function updateProgress(percentage) {
-                const progressBarElement = document.querySelector('.progress-bar');
-                progressBarElement.style.width = `${percentage}%`;
-                progressBarElement.textContent = `${Math.round(percentage)}%`;
             }
             
-            function showAlert(type, message) {
+            // Form submission - Start campaign
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                if (isCampaignActive) {
+                    showAlert('warning', 'A campaign is already running. Please stop it first.');
+                    return;
+                }
+                
+                // Validate inputs
+                const gmailEmail = document.getElementById('gmail_email').value;
+                const gmailPassword = document.getElementById('gmail_password').value;
+                const recipientsRaw = document.getElementById('recipients').value;
+                
+                if (!gmailEmail || !gmailPassword) {
+                    showAlert('danger', 'Please enter Gmail credentials and app password.');
+                    return;
+                }
+                
+                const emails = recipientsRaw.split(',').map(e => e.trim()).filter(e => e && e.includes('@'));
+                if (emails.length === 0) {
+                    showAlert('danger', 'Please enter at least one valid email address.');
+                    return;
+                }
+                
+                // Reset campaign state
+                emailQueue = [...emails];
+                totalRecipients = emailQueue.length;
+                currentIndex = 0;
+                sentCount = 0;
+                failedCount = 0;
+                campaignResults = [];
+                isCampaignActive = true;
+                
+                // Clear previous results and logs
+                resultsContainer.style.display = 'none';
+                resultsList.innerHTML = '';
                 clearAlerts();
                 
-                const alertDiv = document.createElement('div');
-                alertDiv.className = `alert alert-${type} alert-custom alert-dismissible fade show`;
-                alertDiv.innerHTML = `
-                    ${message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                `;
+                // Update UI
+                sendButton.disabled = true;
+                sendButton.style.display = 'none';
+                stopButton.style.display = 'block';
+                progressBar.style.display = 'block';
+                statusDisplay.style.display = 'block';
+                updateProgress(0);
                 
-                alertContainer.appendChild(alertDiv);
-            }
+                addLog(`🚀 CAMPAIGN STARTED! Total recipients: ${totalRecipients}`, 'success');
+                addLog(`⏱️ Each email will be sent with 60 seconds delay to avoid spam.`, 'info');
+                addLog(`📧 First email to: ${emailQueue[0]} will be sent in 60 seconds.`, 'info');
+                
+                campaignStatusSpan.textContent = `Starting - ${totalRecipients} recipients queued`;
+                
+                // Start the campaign
+                processNextEmail();
+            });
             
-            function clearAlerts() {
-                alertContainer.innerHTML = '';
-            }
-            
-            // Pre-fill form with sample data for testing (remove in production)
-            document.getElementById('header_name').value = 'Super Cash International';
-            document.getElementById('subject').value = 'Exciting Earning Opportunity!';
-            document.getElementById('message_body').value = `Dear Recipient,
-
-We are excited to inform you about our new earning platform - Super Cash International!
-
-Key Features:
-• Daily earning opportunities
-• Low minimum payout
-• 24/7 support
-• Secure platform
-
-Join us today and start earning!
-
-Best regards,
-Super Cash Team`;
+            // Stop button handler
+            stopButton.addEventListener('click', function() {
+                stopCampaign();
+            });
         });
     </script>
 </body>
